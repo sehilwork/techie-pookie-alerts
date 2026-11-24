@@ -1,0 +1,63 @@
+# Techie Pookie follower alerts, run by GitHub Actions every 10 min (so they work while the owner's Mac is closed).
+# Sends a Telegram message when YouTube subscribers or Instagram followers go above their highest count so far.
+# Secrets (repo Settings → Secrets → Actions): TG_TOKEN, TG_CHAT, IG_TOKEN. Counts are kept in state.json (committed back).
+import json, os, re, sys, urllib.error, urllib.parse, urllib.request
+
+YT_URL = "https://www.youtube.com/channel/UCnhsSjyA80CfXgBvNm2KMbg"
+IG_ID = "17841410007907238"  # @techie___pookie
+YT_MILESTONES = [500, 1000, 2500, 5000, 10000, 25000, 50000, 100000]
+IG_MILESTONES = [5000, 7500, 10000, 15000, 20000, 25000, 50000, 75000, 100000, 250000, 500000, 1000000]
+STATE = "state.json"
+
+def tg(text):
+    data = urllib.parse.urlencode({"chat_id": os.environ["TG_CHAT"], "text": text}).encode()
+    urllib.request.urlopen(f"https://api.telegram.org/bot{os.environ['TG_TOKEN']}/sendMessage", data, timeout=30)
+
+def youtube():
+    req = urllib.request.Request(YT_URL, headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US"})
+    html = urllib.request.urlopen(req, timeout=30).read().decode("utf-8", "replace")
+    m = re.search(r"([\d.,]+)([KM]?) subscribers", html)
+    # shortcut: YouTube shows exact counts only below 1,000 ("1.2K" after); switch to the YouTube Data API then
+    return int(round(float(m.group(1).replace(",", "")) * {"": 1, "K": 1000, "M": 1000000}[m.group(2)])) if m else None
+
+def instagram():
+    q = urllib.parse.urlencode({"fields": "username,followers_count", "access_token": os.environ["IG_TOKEN"]})
+    return json.load(urllib.request.urlopen(f"https://graph.facebook.com/v21.0/{IG_ID}?{q}", timeout=30))["followers_count"]
+
+def rise(key, n, milestones, first_line, extra=None):
+    """Alert once when n beats the best count seen (a 340->339->340 wobble does not re-alert)."""
+    best = st.get(key)
+    st[key] = max(n, best or 0)
+    if best is None or n <= best:
+        return
+    msg = first_line(n - best, n)
+    hit = [m for m in milestones if best < m <= n]
+    if hit:
+        msg += f"\n🏆 Milestone: {hit[-1]:,}!"
+    if extra:
+        msg += extra(n)
+    tg(msg)
+
+st = json.load(open(STATE)) if os.path.exists(STATE) else {}
+try:
+    n = youtube()
+    if n:
+        rise("yt_best", n, YT_MILESTONES,
+             lambda d, n: f"🎉 {'New subscriber' if d == 1 else f'{d} new subscribers'}! Techie Pookie now has {n:,} subscribers.",
+             lambda n: f"\n📈 {1000 - n} more to the 1,000 needed for monetisation." if n < 1000 else "")
+except Exception as e:
+    print("youtube skipped:", e)
+try:
+    rise("ig_best", instagram(), IG_MILESTONES,
+         lambda d, n: f"📸 {'New Instagram follower' if d == 1 else f'+{d} Instagram followers'}! @techie___pookie now has {n:,} followers.")
+    st.pop("ig_warned", None)
+except urllib.error.HTTPError as e:
+    print("instagram key error:", e.code)
+    if e.code in (400, 401, 403) and not st.get("ig_warned"):
+        st["ig_warned"] = True
+        tg("⚠️ Instagram follower alerts stopped: the access key stopped working. Make a new one in "
+           "Business settings → System users → follower-counter → Generate token, and update the IG_TOKEN secret on GitHub.")
+except Exception as e:
+    print("instagram skipped:", e)
+json.dump(st, open(STATE, "w"), indent=1, sort_keys=True)
+print(st)
