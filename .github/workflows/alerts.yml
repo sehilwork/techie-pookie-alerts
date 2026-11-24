@@ -1,23 +1,26 @@
 name: follower-alerts
+# GitHub's own schedule proved unreliable (no 10-min runs fired on 24 Nov), so each run loops: check every 10 minutes for
+# ~5h40m, then starts the next run itself. The hourly schedule only restarts the chain if it ever breaks.
 on:
   schedule:
-    - cron: "*/10 * * * *"   # GitHub may run it a few minutes late at busy times
+    - cron: "17 * * * *"
   workflow_dispatch:
 permissions:
   contents: write
+  actions: write
 concurrency:
   group: alerts
-  cancel-in-progress: false
+  cancel-in-progress: false   # at most one loop runs; a restart waits as "pending" instead of running in parallel
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python check.py
+      - name: check every 10 minutes
         env:
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT: ${{ secrets.TG_CHAT }}
@@ -25,9 +28,17 @@ jobs:
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
-      - name: save counts
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add state.json
-          git diff --cached --quiet || (git commit -m "update counts" && git push)
+          for i in $(seq 1 34); do
+            python check.py || true
+            git add state.json
+            git diff --cached --quiet || { git commit -qm "update counts" && git push -q || true; }
+            [ "$i" -lt 34 ] && sleep 600
+          done
+      - name: start the next run
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run alerts.yml --ref main
