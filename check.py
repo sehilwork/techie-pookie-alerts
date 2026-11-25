@@ -9,8 +9,6 @@ import datetime, json, os, re, sys, urllib.error, urllib.parse, urllib.request
 
 YT_URL = "https://www.youtube.com/channel/UCnhsSjyA80CfXgBvNm2KMbg"
 IG_ID = "17841410007907238"  # @techie___pookie
-YT_MILESTONES = [500, 1000, 2500, 5000, 10000, 25000, 50000, 100000]
-IG_MILESTONES = [5000, 7500, 10000, 15000, 20000, 25000, 50000, 75000, 100000, 250000, 500000, 1000000]
 STATE = "state.json"
 
 def tg(text):
@@ -28,33 +26,24 @@ def instagram():
     q = urllib.parse.urlencode({"fields": "username,followers_count", "access_token": os.environ["IG_TOKEN"]})
     return json.load(urllib.request.urlopen(f"https://graph.facebook.com/v21.0/{IG_ID}?{q}", timeout=30))["followers_count"]
 
-def rise(key, n, milestones, first_line, extra=None):
+def rise(key, n, label, unit):
     """Alert once when n beats the best count seen (a 340->339->340 wobble does not re-alert)."""
     best = st.get(key)
     st[key] = max(n, best or 0)
     if best is None or n <= best:
         return
-    msg = first_line(n - best, n)
-    hit = [m for m in milestones if best < m <= n]
-    if hit:
-        msg += f"\n🏆 Milestone: {hit[-1]:,}!"
-    if extra:
-        msg += extra(n)
-    tg(msg)
+    tg(f"{label}\n+{n - best} , Total : {n:,} {unit}")
 
 st = json.load(open(STATE)) if os.path.exists(STATE) else {}
 n = None
 try:
     n = youtube()
     if n:
-        rise("yt_best", n, YT_MILESTONES,
-             lambda d, n: f"🎉 {'New subscriber' if d == 1 else f'{d} new subscribers'}! Techie Pookie now has {n:,} subscribers.",
-             lambda n: f"\n📈 {1000 - n} more to the 1,000 needed for monetisation." if n < 1000 else "")
+        rise("yt_best", n, "YouTube", "subscribers")
 except Exception as e:
     print("youtube skipped:", e)
 try:
-    rise("ig_best", instagram(), IG_MILESTONES,
-         lambda d, n: f"📸 {'New Instagram follower' if d == 1 else f'+{d} Instagram followers'}! @techie___pookie now has {n:,} followers.")
+    rise("ig_best", instagram(), "Instagram", "followers")
     st.pop("ig_warned", None)
 except urllib.error.HTTPError as e:
     print("instagram key error:", e.code)
