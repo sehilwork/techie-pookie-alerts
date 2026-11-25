@@ -32,6 +32,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           for i in $(seq 1 34); do
+            git pull -q --rebase origin main || true   # pick up code changes pushed while this loop runs
             python check.py || true
             git add state.json
             git diff --cached --quiet || { git commit -qm "update counts" && git push -q || true; }
