@@ -2,6 +2,9 @@
  "ig_best": 5581,
  "ig_warned": true,
  "yt_best": 452,
+ "yt_exact": 361,
+ "yt_exact_day": "2026-11-24",
+ "yt_offset": -6,
  "yt_public_by_day": {
   "2026-11-24": 361,
   "2026-11-25": 411,
